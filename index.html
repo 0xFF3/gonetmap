@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IP Manager</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #e9edf0;
+    --surface: #f7f9fa;
+    --ink: #14212b;
+    --muted: #5b6a76;
+    --line: #cfd7de;
+    --up: #0f766e;
+    --down: #b45309;
+    --free: #d3dce3;
+    --accent: #2b4acb;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e171e;
+      --surface: #14212b;
+      --ink: #e6edf2;
+      --muted: #8fa0ad;
+      --line: #26384a;
+      --up: #2dd4bf;
+      --down: #f0a24b;
+      --free: #1f313f;
+      --accent: #8da2ff;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 20px 72px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Шапка */
+  header { display: flex; flex-wrap: wrap; gap: 16px 40px; align-items: flex-end; justify-content: space-between; }
+  h1 { margin: 0; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+  .status { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
+  .status span { display: block; }
+  .actions { display: flex; align-items: center; gap: 24px; }
+  .counts { display: flex; gap: 20px; margin: 0; padding: 0; list-style: none; }
+  .counts li { color: var(--muted); font-size: 0.9rem; }
+  .counts b { display: block; color: var(--ink); font-size: 1.5rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  button.primary {
+    font: inherit; font-weight: 600; padding: 8px 16px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  }
+  @media (prefers-color-scheme: dark) { button.primary { color: #0e171e; } }
+  button.primary:disabled { opacity: 0.55; cursor: default; }
+
+  .error { margin: 20px 0 0; padding: 10px 14px; border-left: 3px solid var(--down); background: var(--surface); }
+
+  /* Карта адресов */
+  .net { margin-top: 32px; }
+  .net-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-bottom: 10px; }
+  .net-head h2 { margin: 0; font: 600 1.05rem var(--mono); }
+  .net-head span { color: var(--muted); font-size: 0.9rem; }
+  .gridwrap { overflow-x: auto; padding-bottom: 4px; }
+  .grid {
+    --cell: 18px;
+    display: grid; grid-template-columns: repeat(var(--cols), var(--cell)); gap: 3px; width: max-content;
+  }
+  .cell { width: var(--cell); height: var(--cell); border-radius: 3px; background: var(--free); cursor: pointer; }
+  .cell.up { background: var(--up); }
+  .cell.agg { background: var(--up); opacity: var(--lvl); }
+  .cell.down { background: transparent; box-shadow: inset 0 0 0 2px var(--down); }
+  .cell.na { background: transparent; box-shadow: inset 0 0 0 1px var(--line); cursor: default; }
+  .cell:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 12px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 0.85rem; }
+  .legend li { display: flex; align-items: center; gap: 8px; }
+  .legend .cell { width: 12px; height: 12px; cursor: default; }
+  .legend .cell:hover { outline: none; }
+
+  /* Таблица */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin: 40px 0 12px; }
+  .toolbar input, .toolbar select {
+    font: inherit; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;
+  }
+  .toolbar input { flex: 1 1 240px; min-width: 0; }
+  .tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 9px 14px; text-align: left; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 0.85rem; border-bottom: 1px solid var(--line); }
+  td { border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: 0; }
+  td.mono { font-family: var(--mono); font-size: 0.9rem; }
+  .dim { color: var(--muted); }
+  .st { display: inline-flex; align-items: center; gap: 8px; }
+  .st::before { content: ""; width: 10px; height: 10px; border-radius: 50%; }
+  .st.up::before { background: var(--up); }
+  .st.down::before { box-shadow: inset 0 0 0 2px var(--down); }
+  .empty { padding: 28px 14px; color: var(--muted); }
+  .count-line { margin: 10px 2px 0; color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>IP Manager</h1>
+      <p class="status" id="status" aria-live="polite"></p>
+    </div>
+    <div class="actions">
+      <ul class="counts">
+        <li><b id="c-up">0</b>в сети</li>
+        <li><b id="c-down">0</b>не в сети</li>
+        <li><b id="c-all">0</b>всего</li>
+      </ul>
+      <button class="primary" id="scan" type="button">Сканировать сейчас</button>
+    </div>
+  </header>
+
+  <p class="error" id="err" role="alert" hidden>Нет связи с сервером. Повторяю попытку каждые 5 секунд.</p>
+
+  <div id="map" aria-hidden="true"></div>
+
+  <div class="toolbar">
+    <input id="q" type="search" placeholder="Поиск по IP, имени, MAC или порту" aria-label="Поиск">
+    <select id="net" aria-label="Сеть" hidden></select>
+    <select id="state" aria-label="Состояние">
+      <option value="">Все хосты</option>
+      <option value="up">В сети</option>
+      <option value="down">Не в сети</option>
+    </select>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Состояние</th><th>IP-адрес</th><th>Имя</th><th>MAC</th>
+          <th>Открытые порты</th><th>Первый раз</th><th>Последний раз</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty" hidden></div>
+  </div>
+  <p class="count-line" id="count-line"></p>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ipToNum = ip => ip.split('.').reduce((a, o) => a * 256 + Number(o), 0);
+const numToIp = n => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
+
+let hosts = [];
+let st = { networks: [] };
+const filter = { q: '', net: '', state: '' };
+
+function dur(s) {
+  if (s < 60) return s + ' с';
+  if (s < 3600) return Math.floor(s / 60) + ' мин';
+  if (s < 86400) return Math.floor(s / 3600) + ' ч';
+  return Math.floor(s / 86400) + ' дн';
+}
+function rel(iso) {
+  if (!iso) return '—';
+  const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 0) return 'через ' + dur(-s);
+  return s < 10 ? 'только что' : dur(s) + ' назад';
+}
+const abs = iso => new Date(iso).toLocaleString('ru-RU');
+
+/* ---------- Шапка ---------- */
+function renderHeader() {
+  const lines = [];
+  if (st.running) {
+    lines.push('Идёт сканирование…');
+  } else {
+    lines.push(st.last_scan ? 'Последнее сканирование: ' + rel(st.last_scan) : 'Сканирований ещё не было');
+    if (st.next_scan) lines.push('Следующее: ' + rel(st.next_scan));
+  }
+  $('#status').innerHTML = lines.map(l => '<span>' + esc(l) + '</span>').join('');
+
+  const up = hosts.filter(h => h.up).length;
+  $('#c-up').textContent = up;
+  $('#c-down').textContent = hosts.length - up;
+  $('#c-all').textContent = hosts.length;
+
+  $('#scan').disabled = !!st.running;
+  $('#scan').textContent = st.running ? 'Идёт сканирование…' : 'Сканировать сейчас';
+}
+
+/* ---------- Карта адресов ---------- */
+function netBlock(cidr) {
+  const [ip, bitsStr] = cidr.split('/');
+  const bits = Number(bitsStr);
+  const size = 2 ** (32 - bits);
+  const base = Math.floor(ipToNum(ip) / size) * size;
+  const usable = bits <= 30 ? size - 2 : size;
+  const mine = hosts.filter(h => h.network === cidr);
+  const upCount = mine.filter(h => h.up).length;
+
+  let cells = '';
+  let cols = 16;
+
+  if (size <= 1024) {
+    // Одна клетка — один адрес.
+    const byIp = new Map(mine.map(h => [h.ip, h]));
+    cols = size <= 256 ? 16 : 32;
+    for (let i = 0; i < size; i++) {
+      const a = numToIp(base + i);
+      const h = byIp.get(a);
+      let cls = 'free';
+      let tip = a + ' — не обнаружен';
+      if (h) {
+        cls = h.up ? 'up' : 'down';
+        tip = a + (h.hostname ? ' ' + h.hostname : '') + (h.up ? ' — в сети' : ' — не в сети');
+      } else if (bits <= 30 && (i === 0 || i === size - 1)) {
+        cls = 'na';
+        tip = a + ' — служебный адрес';
+      }
+      cells += `<div class="cell ${cls}" data-ip="${a}" title="${esc(tip)}"></div>`;
+    }
+  } else {
+    // Сеть крупная: одна клетка — подсеть /24, яркость показывает число хостов в сети.
+    const counts = new Array(size / 256).fill(0);
+    mine.forEach(h => { if (h.up) counts[Math.floor((ipToNum(h.ip) - base) / 256)]++; });
+    counts.forEach((c, b) => {
+      const a = numToIp(base + b * 256);
+      const lvl = (0.3 + 0.7 * Math.min(c, 254) / 254).toFixed(2);
+      cells += `<div class="cell ${c ? 'agg' : 'free'}" style="--lvl:${lvl}" ` +
+               `data-ip="${a.replace(/\d+$/, '')}" title="${a}/24 — в сети: ${c}"></div>`;
+    });
+  }
+
+  const unit = size <= 1024 ? 'адресов' : 'адресов (клетка — подсеть /24)';
+  return `<section class="net">
+    <div class="net-head">
+      <h2>${esc(cidr)}</h2>
+      <span>в сети ${upCount} из ${usable} ${unit}</span>
+    </div>
+    <div class="gridwrap"><div class="grid" style="--cols:${cols}">${cells}</div></div>
+  </section>`;
+}
+
+function renderMap() {
+  const nets = filter.net ? [filter.net] : st.networks;
+  const legend = `<ul class="legend">
+    <li><span class="cell up"></span>в сети</li>
+    <li><span class="cell down"></span>была в сети, сейчас нет</li>
+    <li><span class="cell free"></span>не обнаружен</li>
+  </ul>`;
+  $('#map').innerHTML = nets.map(netBlock).join('') + (nets.length ? legend : '');
+}
+
+/* ---------- Таблица ---------- */
+function matches(h) {
+  if (filter.net && h.network !== filter.net) return false;
+  if (filter.state === 'up' && !h.up) return false;
+  if (filter.state === 'down' && h.up) return false;
+  const q = filter.q.trim().toLowerCase();
+  if (!q) return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(q)) return h.ip === q; // полный адрес — точное совпадение
+  return [h.ip, h.hostname, h.mac, h.ports.replace(/,/g, ' ')].join(' ').toLowerCase().includes(q);
+}
+
+function row(h) {
+  const dash = '<span class="dim">—</span>';
+  return `<tr>
+    <td><span class="st ${h.up ? 'up' : 'down'}">${h.up ? 'в сети' : 'не в сети'}</span></td>
+    <td class="mono">${esc(h.ip)}</td>
+    <td>${esc(h.hostname) || dash}</td>
+    <td class="mono">${esc(h.mac) || dash}</td>
+    <td>${esc(h.ports.replace(/,/g, ', ')) || dash}</td>
+    <td title="${esc(abs(h.first_seen))}">${esc(rel(h.first_seen))}</td>
+    <td title="${esc(abs(h.last_seen))}">${esc(rel(h.last_seen))}</td>
+  </tr>`;
+}
+
+function renderTable() {
+  const list = hosts.filter(matches);
+  $('#rows').innerHTML = list.map(row).join('');
+
+  const empty = $('#empty');
+  empty.hidden = list.length > 0;
+  if (!list.length) {
+    empty.textContent = hosts.length
+      ? 'Ничего не найдено. Измените поиск или фильтры.'
+      : 'Данных пока нет. Первое сканирование ещё не завершилось.';
+  }
+  $('#count-line').textContent = hosts.length ? `Показано ${list.length} из ${hosts.length}` : '';
+}
+
+function renderNetSelect() {
+  const sel = $('#net');
+  sel.hidden = st.networks.length < 2;
+  if (sel.options.length === st.networks.length + 1) return;
+  sel.innerHTML = '<option value="">Все сети</option>' +
+    st.networks.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  sel.value = filter.net;
+}
+
+function render() {
+  renderHeader();
+  renderNetSelect();
+  renderMap();
+  renderTable();
+}
+
+/* ---------- Данные ---------- */
+const ok = r => { if (!r.ok) throw new Error(r.status); return r.json(); };
+
+async function load() {
+  try {
+    const [h, s] = await Promise.all([fetch('/api/hosts').then(ok), fetch('/api/status').then(ok)]);
+    hosts = h;
+    st = s;
+    $('#err').hidden = true;
+    render();
+  } catch (e) {
+    $('#err').hidden = false;
+  }
+}
+
+/* ---------- События ---------- */
+$('#q').addEventListener('input', e => { filter.q = e.target.value; renderTable(); });
+$('#state').addEventListener('change', e => { filter.state = e.target.value; renderTable(); });
+$('#net').addEventListener('change', e => { filter.net = e.target.value; renderMap(); renderTable(); });
+
+$('#map').addEventListener('click', e => {
+  const cell = e.target.closest('.cell');
+  if (!cell || !cell.dataset.ip) return;
+  filter.q = cell.dataset.ip;
+  $('#q').value = filter.q;
+  renderTable();
+});
+
+$('#scan').addEventListener('click', async () => {
+  $('#scan').disabled = true;
+  try {
+    await fetch('/api/scan', { method: 'POST' });
+  } catch (e) { /* ошибку покажет load() */ }
+  setTimeout(load, 500);
+});
+
+load();
+setInterval(load, 5000);
+</script>
+</body>
+</html>
